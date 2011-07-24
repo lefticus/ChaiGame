@@ -16,27 +16,27 @@ class Layer;
 class Position
 {
   public:
-    Position(int t_x, int t_y)
+    Position(double t_x, double t_y)
       : m_x(t_x), m_y(t_y)
     {
     }
 
-    const int &x() const
+    const double &x() const
     {
       return m_x;
     }
 
-    const int &y() const
+    const double &y() const
     {
       return m_y;
     }
 
-    int &x() 
+    double &x() 
     {
       return m_x;
     }
 
-    int &y()
+    double &y()
     {
       return m_y;
     }
@@ -53,8 +53,8 @@ class Position
     }
 
   private:
-    int m_x;
-    int m_y;
+    double m_x;
+    double m_y;
 
 };
 
@@ -112,12 +112,12 @@ class Surface
       SDL_BlitSurface(m_surface, NULL, t_surface.m_surface, &dest);
     }
 
-    int width() const
+    double width() const
     {
       return m_surface->w;
     }
 
-    int height() const
+    double height() const
     {
       return m_surface->h;
     }
@@ -146,7 +146,7 @@ class Screen
     {
       Initializer()
       {
-        if ( SDL_Init(SDL_INIT_AUDIO|SDL_INIT_VIDEO) < 0 ) {
+        if ( SDL_Init(SDL_INIT_AUDIO|SDL_INIT_VIDEO|SDL_INIT_TIMER) < 0 ) {
           throw std::runtime_error(std::string("Unable to init SDL: ") + SDL_GetError());
         }
       }
@@ -189,7 +189,7 @@ class Object
 class Layer
 {
   public:
-    Layer(int t_width, int t_height)
+    Layer(double t_width, double t_height)
       : m_width(t_width), m_height(t_height)
     {
     }
@@ -210,20 +210,20 @@ class Layer
       }
     }
 
-    int width() const
+    double width() const
     {
       return m_width;
     }
 
-    int height() const
+    double height() const
     {
       return m_height;
     }
 
 
   private:
-    int m_width;
-    int m_height;
+    double m_width;
+    double m_height;
 
     std::set<std::pair<Position, boost::shared_ptr<Object> > > m_objects;
 };
@@ -253,18 +253,18 @@ class Room
       double xpercent = double(t_pos_on_layer.x()) / (*foundlayer)->width();
       double ypercent = double(t_pos_on_layer.y()) / (*foundlayer)->height();
 
-      int renderwidth = t_surface.width();
-      int renderheight = t_surface.height();
+      double renderwidth = t_surface.width();
+      double renderheight = t_surface.height();
 
       for (std::vector<boost::shared_ptr<Layer> >::const_iterator itr = m_layers.begin();
            itr != m_layers.end();
            ++itr)
       {
-        int xcenter = (*itr)->width() * xpercent;
-        int ycenter = (*itr)->height() * ypercent;
+        double xcenter = (*itr)->width() * xpercent;
+        double ycenter = (*itr)->height() * ypercent;
 
-        int xoffset = -xcenter + renderwidth / 2;
-        int yoffset = -ycenter + renderheight / 2;
+        double xoffset = -xcenter + renderwidth / 2;
+        double yoffset = -ycenter + renderheight / 2;
 
         (*itr)->render(t_surface, Position(xoffset, yoffset));
       }
@@ -282,27 +282,45 @@ struct State
 {
   Position p;
 
+  bool moving_left;
+  bool moving_right;
+  bool moving_up;
+  bool moving_down;
+
+  double s_per_frame;
+
+  int frame_count;
+
+
   State()
-    : p(100, 100)
+    : p(100, 100),
+      moving_left(false),
+      moving_right(false),
+      moving_up(false),
+      moving_down(false),
+      s_per_frame(.03),
+      frame_count(0)
   {
   }
 };
 
-void handleKeyPress(State &t_state, SDLKey t_key)
+void handleKey(State &t_state, SDL_KeyboardEvent t_key)
 {
-  switch (t_key)
+  bool keypressed = t_key.state == SDL_PRESSED;
+
+  switch (t_key.keysym.sym)
   {
     case SDLK_LEFT:
-      t_state.p.x() -= 10;
+      t_state.moving_left = keypressed;
       break;
     case SDLK_RIGHT:
-      t_state.p.x() += 10;
+      t_state.moving_right = keypressed;
       break;
     case SDLK_UP:
-      t_state.p.y() -= 10;
+      t_state.moving_up = keypressed;
       break;
     case SDLK_DOWN:
-      t_state.p.y() += 10;
+      t_state.moving_down = keypressed;
       break;
 
     default:
@@ -311,6 +329,73 @@ void handleKeyPress(State &t_state, SDLKey t_key)
   }
 }
 
+void updateState(State &t_state)
+{
+  if (t_state.moving_left)
+  {
+    t_state.p.x() -= 50 * t_state.s_per_frame;
+  }
+  if (t_state.moving_right)
+  {
+    t_state.p.x() += 50 * t_state.s_per_frame;
+  }
+  if (t_state.moving_up)
+  {
+    t_state.p.y() -= 50 * t_state.s_per_frame;
+  }
+  if (t_state.moving_down)
+  {
+    t_state.p.y() += 50 * t_state.s_per_frame;
+  }
+}
+
+struct Quit_Exception : std::runtime_error
+{
+  Quit_Exception() throw()
+    : std::runtime_error("Quit Requested")
+  {
+  }
+
+  virtual ~Quit_Exception() throw()
+  {
+  }
+};
+
+void handleSDLEvents(State &t_state)
+{
+  SDL_Event e;
+  if (SDL_PollEvent(&e))
+  {
+    switch (e.type)
+    {
+      case SDL_KEYDOWN:
+      case SDL_KEYUP:
+        handleKey(t_state, e.key);
+        break;
+      case SDL_QUIT:
+        throw Quit_Exception();
+        break;
+      case SDL_USEREVENT:
+        t_state.s_per_frame = 1 / (double(t_state.frame_count) * 10);
+        std::cout << "FPS: " << t_state.frame_count * 10 << std::endl << std::flush;
+        t_state.frame_count = 0;
+        break;
+
+      default:
+        ;
+    }
+  }
+}
+
+uint32_t timerevent(uint32_t interval, void *)
+{
+  SDL_Event event;
+  event.type = SDL_USEREVENT;
+  SDL_PushEvent(&event);
+
+  return interval;
+
+}
 
 int main()
 {
@@ -335,29 +420,24 @@ int main()
   clouds->addObject(Position(300, 10), o1);
   clouds->addObject(Position(10, 400), o1);
 
+  bool cont = true;
+  SDL_AddTimer(100, &timerevent, 0);
 
-  while (true)
+  while (cont)
   {
-    SDL_Event e;
-    if (SDL_PollEvent(&e))
-    {
-      switch (e.type)
-      {
-        case SDL_KEYDOWN:
-          handleKeyPress(state, e.key.keysym.sym);
-          s.getSurface().clear();
-          r1.render(s.getSurface(), play, state.p);
-          break;
-        default:
-          ;
-      }
-
-
+    try {
+      handleSDLEvents(state);
+      updateState(state);
+    } catch (const Quit_Exception &) {
+      cont = false;
     }
+
+    s.getSurface().clear();
+    r1.render(s.getSurface(), play, state.p);
+
+    ++state.frame_count;
   }
 
-  char c;
-  std::cin >> c;
 }
 
 
