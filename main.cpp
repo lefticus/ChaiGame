@@ -88,7 +88,8 @@ class Surface
       dest.y=0;
       dest.w=m_surface->w;
       dest.h=m_surface->h;
-      SDL_FillRect(m_surface, &dest, 0);
+//      SDL_SetAlpha(m_surface, SDL_SRCALPHA, SDL_ALPHA_OPAQUE);
+      SDL_FillRect(m_surface, &dest, SDL_MapRGBA(m_surface->format, 0, 0, 0, SDL_ALPHA_TRANSPARENT));
     }
 
     void flip()
@@ -130,7 +131,7 @@ class Screen
 {
   public:
     Screen()
-      : m_initializer(), m_surface(SDL_SetVideoMode(640, 480, 32, SDL_SWSURFACE))
+      : m_initializer(), m_surface(SDL_SetVideoMode(640, 480, 32, SDL_HWSURFACE | SDL_HWACCEL))
     {
 
     }
@@ -189,41 +190,55 @@ class Object
 class Layer
 {
   public:
-    Layer(double t_width, double t_height)
-      : m_width(t_width), m_height(t_height)
+    Layer(const std::string &t_image)
+      : m_dirty(false), m_surface(IMG_Load(t_image.c_str()), &IMG_GetError),
+        m_rendered_surface(IMG_Load(t_image.c_str()), &IMG_GetError)
     {
     }
 
     void addObject(Position t_p, const boost::shared_ptr<Object> &t_obj)
     {
       m_objects.insert(std::make_pair(t_p, t_obj));
+      m_dirty = true;
     }
 
     void render(Surface &t_surface, const Position &t_offset) const
     {
-      for (std::set<std::pair<Position, boost::shared_ptr<Object> > >::const_iterator itr = m_objects.begin();
-           itr != m_objects.end();
-           ++itr)
+      if (m_dirty) 
       {
+//        m_rendered_surface.clear();
+//        m_surface.render(m_rendered_surface, Position(0, 0));
+ 
+        for (std::set<std::pair<Position, boost::shared_ptr<Object> > >::const_iterator itr = m_objects.begin();
+             itr != m_objects.end();
+             ++itr)
+        {
+          itr->second->render(m_rendered_surface, itr->first);
+        }
 
-        itr->second->render(t_surface, itr->first + t_offset);
+        m_dirty = false;
       }
+
+      m_rendered_surface.render(t_surface, t_offset);
     }
 
     double width() const
     {
-      return m_width;
+      return m_surface.width();
     }
 
     double height() const
     {
-      return m_height;
+      return m_surface.height();
     }
 
 
   private:
-    double m_width;
-    double m_height;
+    mutable bool m_dirty;
+
+    Surface m_surface; // cached surface
+
+    mutable Surface m_rendered_surface; // cached surface
 
     std::set<std::pair<Position, boost::shared_ptr<Object> > > m_objects;
 };
@@ -404,8 +419,8 @@ int main()
   State state;
 
   Room r1;
-  boost::shared_ptr<Layer> clouds(new Layer(640, 480));
-  boost::shared_ptr<Layer> play(new Layer(1000, 1000));
+  boost::shared_ptr<Layer> clouds(new Layer("clouds.png"));
+  boost::shared_ptr<Layer> play(new Layer("play.png"));
   boost::shared_ptr<Object> o1(new Object("cloud.png"));
   boost::shared_ptr<Object> o2(new Object("tree.png"));
   r1.addLayer(play);
